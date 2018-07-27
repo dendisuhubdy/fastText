@@ -43,7 +43,10 @@ class FastText {
   std::atomic<int64_t> tokenCount_{};
   std::atomic<real> loss_{};
 
-  std::chrono::steady_clock::time_point start_;
+  // XXX This is not atomic
+  std::shared_ptr<Vector> weights_;
+
+  clock_t start_;
   void signModel(std::ostream&);
   bool checkModel(std::istream&);
   void startThreads();

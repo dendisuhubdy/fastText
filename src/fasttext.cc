@@ -268,23 +268,23 @@ void FastText::printInfo(real progress, real loss, std::ostream& log_stream) {
           .count();
   double lr = args_->lr * (1.0 - progress);
   double wst = 0;
-
-  int64_t eta = 2592000; // Default to one month in seconds (720 * 3600)
-
+  int64_t eta = 720 * 3600; // Default to one month
   if (progress > 0 && t >= 0) {
-    progress = progress * 100;
-    eta = t * (100 - progress) / progress;
-    wst = double(tokenCount_) / t / args_->thread;
+    eta = int(t / progress * (1 - progress) / args_->thread);
+    wst = double(tokenCount_) / t;
   }
   int32_t etah = eta / 3600;
   int32_t etam = (eta % 3600) / 60;
-
+  progress = progress * 100;
   log_stream << std::fixed;
   log_stream << "Progress: ";
   log_stream << std::setprecision(1) << std::setw(5) << progress << "%";
   log_stream << " words/sec/thread: " << std::setw(7) << int64_t(wst);
   log_stream << " lr: " << std::setw(9) << std::setprecision(6) << lr;
   log_stream << " loss: " << std::setw(9) << std::setprecision(6) << loss;
+  log_stream << " weights: ";
+  for (int32_t i = 0; i < 2 * args_->ws; ++i)
+    log_stream << std::setprecision(6) << (*weights_)[i] << " ";
   log_stream << " ETA: " << std::setw(3) << etah;
   log_stream << "h" << std::setw(2) << etam << "m";
   log_stream << std::flush;
@@ -752,6 +752,7 @@ std::shared_ptr<Matrix> FastText::createTrainOutputMatrix() const {
 void FastText::train(const Args& args) {
   args_ = std::make_shared<Args>(args);
   dict_ = std::make_shared<Dictionary>(args_);
+  weights_ = std::make_shared<Vector>(2 * args.ws);
   if (args_->input == "-") {
     // manage expectations
     throw std::invalid_argument("Cannot use stdin for training!");
@@ -777,7 +778,7 @@ void FastText::train(const Args& args) {
 }
 
 void FastText::startThreads() {
-  start_ = std::chrono::steady_clock::now();
+  start_ = clock();
   tokenCount_ = 0;
   loss_ = -1;
   std::vector<std::thread> threads;
@@ -788,10 +789,14 @@ void FastText::startThreads() {
   // Same condition as trainThread
   while (tokenCount_ < args_->epoch * ntokens) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (std::isnan(loss_)) {
+      std::cerr << "Loss is NaN" << std::endl;
+      exit(EXIT_FAILURE);
+    }
     if (loss_ >= 0 && args_->verbose > 1) {
       real progress = real(tokenCount_) / (args_->epoch * ntokens);
-      std::cerr << "\r";
-      printInfo(progress, loss_, std::cerr);
+      // std::cerr << "\r";
+      // printInfo(progress, loss_, std::cerr);
     }
   }
   for (int32_t i = 0; i < args_->thread; i++) {
