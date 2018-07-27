@@ -100,4 +100,18 @@ class Model {
     void setQuantizePointer(std::shared_ptr<QMatrix>, std::shared_ptr<QMatrix>, bool);
 };
 
+class WeightsModel : public Model {
+  protected:
+    int32_t wsz_;
+    Vector weights_grad_;
+  public:
+    Vector weights;
+    Vector weights_probs;
+    WeightsModel(std::shared_ptr<Matrix>, std::shared_ptr<Matrix>,
+                 std::shared_ptr<Args>, int32_t);
+    real softmax(int32_t, real, int32_t);
+    void update(const std::vector<int32_t>&, int32_t, real, int32_t);
+    void exitWithError();
+};
+
 }

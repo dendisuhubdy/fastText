@@ -41,12 +41,15 @@ class FastText {
   std::shared_ptr<QMatrix> qinput_;
   std::shared_ptr<QMatrix> qoutput_;
 
-  std::shared_ptr<Model> model_;
+  std::shared_ptr<WeightsModel> model_;
 
   std::atomic<int64_t> tokenCount_;
   std::atomic<real> loss_;
 
-  std::chrono::steady_clock::time_point start_;
+  // XXX This is not atomic
+  std::shared_ptr<Vector> weights_;
+
+  clock_t start_;
   void signModel(std::ostream&);
   bool checkModel(std::istream&);
 
@@ -84,12 +87,12 @@ class FastText {
   void printInfo(real, real, std::ostream&);
 
   void supervised(
-      Model&,
+      WeightsModel&,
       real,
       const std::vector<int32_t>&,
       const std::vector<int32_t>&);
-  void cbow(Model&, real, const std::vector<int32_t>&);
-  void skipgram(Model&, real, const std::vector<int32_t>&);
+  void cbow(WeightsModel&, real, const std::vector<int32_t>&);
+  void skipgram(WeightsModel&, real, const std::vector<int32_t>&);
   std::vector<int32_t> selectEmbeddings(int32_t) const;
   void getSentenceVector(std::istream&, Vector&);
   void quantize(const Args);

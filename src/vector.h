@@ -47,6 +47,7 @@ class Vector {
       return data_.size();
     }
     void zero();
+    void ones();
     void mul(real);
     real norm() const;
     void addVector(const Vector& source);

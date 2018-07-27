@@ -47,7 +47,7 @@ class Dictionary {
 
     std::shared_ptr<Args> args_;
     std::vector<int32_t> word2int_;
-    std::vector<entry> words_;
+    // std::vector<entry> words_;
 
     std::vector<real> pdiscard_;
     int32_t size_;
@@ -67,6 +67,8 @@ class Dictionary {
     static const std::string EOS;
     static const std::string BOW;
     static const std::string EOW;
+
+    std::vector<entry> words_; // XXX
 
     explicit Dictionary(std::shared_ptr<Args>);
     explicit Dictionary(std::shared_ptr<Args>, std::istream&);

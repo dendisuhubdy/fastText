@@ -36,6 +36,7 @@ Args::Args() {
   label = "__label__";
   verbose = 2;
   pretrainedVectors = "";
+  pretrainedOutputVectors = "";
   saveOutput = false;
 
   qout = false;
@@ -150,6 +151,8 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         verbose = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-pretrainedVectors") {
         pretrainedVectors = std::string(args.at(ai + 1));
+      } else if (args[ai] == "-pretrainedOutputVectors") {
+        pretrainedOutputVectors = std::string(args.at(ai + 1));
       } else if (args[ai] == "-saveOutput") {
         saveOutput = true;
         ai--;
@@ -229,6 +232,7 @@ void Args::printTrainingHelp() {
     << "  -loss               loss function {ns, hs, softmax} [" << lossToString(loss) << "]\n"
     << "  -thread             number of threads [" << thread << "]\n"
     << "  -pretrainedVectors  pretrained word vectors for supervised learning ["<< pretrainedVectors <<"]\n"
+    << "  -pretrainedOutputVectors  pretrained word vectors for supervised learning ["<< pretrainedVectors <<"]\n"
     << "  -saveOutput         whether output params should be saved [" << boolToString(saveOutput) << "]\n";
 }
 
