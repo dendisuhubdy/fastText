@@ -267,16 +267,20 @@ void FastText::loadModel(std::istream& in) {
   }
   output_->load(in);
 
-  auto loss = createLoss(output_);
-  bool normalizeGradient = (args_->model == model_name::sup);
-  model_ = std::make_shared<Model>(input_, output_, loss, normalizeGradient);
+  model_ = std::make_shared<WeightsModel>(input_, output_, args_, 0);
+  model_->quant_ = quant_;
+  model_->setQuantizePointer(qinput_, qoutput_, args_->qout);
+
+  if (args_->model == model_name::sup) {
+    model_->setTargetCounts(dict_->getCounts(entry_type::label));
+  } else {
+    model_->setTargetCounts(dict_->getCounts(entry_type::word));
+  }
 }
 
 void FastText::printInfo(real progress, real loss, std::ostream& log_stream) {
-  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-  double t =
-      std::chrono::duration_cast<std::chrono::duration<double>>(end - start_)
-          .count();
+  // clock_t might also only be 32bits wide on some systems
+  double t = double(clock() - start_) / double(CLOCKS_PER_SEC);
   double lr = args_->lr * (1.0 - progress);
   double wst = 0;
   int64_t eta = 720 * 3600; // Default to one month
@@ -293,6 +297,9 @@ void FastText::printInfo(real progress, real loss, std::ostream& log_stream) {
   log_stream << " words/sec/thread: " << std::setw(7) << int64_t(wst);
   log_stream << " lr: " << std::setw(9) << std::setprecision(6) << lr;
   log_stream << " loss: " << std::setw(9) << std::setprecision(6) << loss;
+  log_stream << " weights: ";
+  for (int32_t i = 0; i < 2 * args_->ws; ++i)
+    log_stream << std::setprecision(6) << (*weights_)[i] << " ";
   log_stream << " ETA: " << std::setw(3) << etah;
   log_stream << "h" << std::setw(2) << etam << "m";
   log_stream << std::flush;
@@ -358,31 +365,31 @@ void FastText::quantize(const Args& qargs) {
   }
 
   quant_ = true;
-  auto loss = createLoss(output_);
-  model_ = std::make_shared<Model>(input_, output_, loss, normalizeGradient);
+  model_ = std::make_shared<WeightsModel>(input_, output_, args_, 0);
+  model_->quant_ = quant_;
+  model_->setQuantizePointer(qinput_, qoutput_, args_->qout);
+  if (args_->model == model_name::sup) {
+    model_->setTargetCounts(dict_->getCounts(entry_type::label));
+  } else {
+    model_->setTargetCounts(dict_->getCounts(entry_type::word));
+  }
 }
 
 void FastText::supervised(
-    Model::State& state,
+    WeightsModel& model,
     real lr,
     const std::vector<int32_t>& line,
     const std::vector<int32_t>& labels) {
-  if (labels.size() == 0 || line.size() == 0) {
-    return;
-  }
-  if (args_->loss == loss_name::ova) {
-    model_->update(line, labels, Model::kAllLabelsAsTarget, lr, state);
-  } else {
-    std::uniform_int_distribution<> uniform(0, labels.size() - 1);
-    int32_t i = uniform(state.rng);
-    model_->update(line, labels, i, lr, state);
-  }
+  if (labels.size() == 0 || line.size() == 0) return;
+  std::uniform_int_distribution<> uniform(0, labels.size() - 1);
+  int32_t i = uniform(model.rng);
+  exit(EXIT_FAILURE);
+  // XXX Not implemented
+  model.update(line, labels[i], lr, 0);
 }
 
-void FastText::cbow(
-    Model::State& state,
-    real lr,
-    const std::vector<int32_t>& line) {
+void FastText::cbow(WeightsModel& model, real lr,
+                    const std::vector<int32_t>& line) {
   std::vector<int32_t> bow;
   std::uniform_int_distribution<> uniform(1, WS); // XXX XXX XXX
   for (int32_t w = 0; w < line.size(); w++) {
@@ -394,21 +401,36 @@ void FastText::cbow(
         bow.insert(bow.end(), ngrams.cbegin(), ngrams.cend());
       }
     }
-    model_->update(bow, line, w, lr, state);
+    exit(EXIT_FAILURE);
+    // XXX Not implemented
+    model.update(bow, line[w], lr, 0);
   }
 }
 
-void FastText::skipgram(
-    Model::State& state,
-    real lr,
-    const std::vector<int32_t>& line) {
-  std::uniform_int_distribution<> uniform(1, args_->ws);
-  for (int32_t w = 0; w < line.size(); w++) {
-    int32_t boundary = uniform(state.rng);
+void FastText::skipgram(WeightsModel& model, real lr,
+                        const std::vector<int32_t>& line) {
+  // for (int32_t w = 0; w < line.size(); w++) {
+  //   std::cerr << line[w] << " " << dict_->words_[w].word << " " << dict_->words_[w].count << std::endl;
+  // }
+  // std::cerr << std::endl;
+  // exit(0);
+  //
+  //
+  //
+  // std::uniform_int_distribution<> uniform(1, args_->ws);
+  for (int32_t w = 0; w < line.size(); w++) { // XXX
+  // for (int32_t w = uniform(model.rng); w < line.size(); w+=args_->ws) {
+    // Start from a random location at the beginning and move the window
+    // int32_t boundary = uniform(model.rng);
+    int32_t boundary = args_->ws;
     const std::vector<int32_t>& ngrams = dict_->getSubwords(line[w]);
     for (int32_t c = -boundary; c <= boundary; c++) {
       if (c != 0 && w + c >= 0 && w + c < line.size()) {
-        model_->update(ngrams, line, w + c, lr, state);
+	// Pass c as offset
+	//     c \in {-boundary, ..., -1, 1, ..., boundary}
+	// so add boundary and subtract 1 in the right half to make
+	//     offset \in {0, ..., 2*boundary-1}.
+        model.update(ngrams, line[w + c], lr, c + boundary + (c > 0 ? -1 : 0));
       }
     }
   }
@@ -660,7 +682,13 @@ void FastText::trainThread(int32_t threadId) {
   std::ifstream ifs(args_->input);
   utils::seek(ifs, threadId * utils::size(ifs) / args_->thread);
 
-  Model::State state(args_->dim, output_->size(0), threadId);
+  // Model model(input_, output_, args_, threadId);
+  WeightsModel model(input_, output_, args_, threadId);
+  if (args_->model == model_name::sup) {
+    model.setTargetCounts(dict_->getCounts(entry_type::label));
+  } else {
+    model.setTargetCounts(dict_->getCounts(entry_type::word));
+  }
 
   const int64_t ntokens = dict_->ntokens();
   int64_t localTokenCount = 0;
@@ -681,12 +709,28 @@ void FastText::trainThread(int32_t threadId) {
     if (localTokenCount > args_->lrUpdateRate) {
       tokenCount_ += localTokenCount;
       localTokenCount = 0;
-      if (threadId == 0 && args_->verbose > 1)
-        loss_ = state.getLoss();
+      if (threadId == 0 && args_->verbose > 1) {
+        loss_ = model.getLoss();
+
+        for (int32_t i = 0; i < 2 * args_->ws; i++)
+          (*weights_)[i] = model.weights_probs[i];
+        real max = (*weights_)[0], z = 0.0;
+        for (int32_t i = 0; i < 2 * args_->ws; i++)
+          max = std::max((*weights_)[i], max);
+        for (int32_t i = 0; i < 2 * args_->ws; i++) {
+          (*weights_)[i] = exp((*weights_)[i] - max);
+          z += (*weights_)[i];
+        }
+        for (int32_t i = 0; i < 2 * args_->ws; i++)
+          (*weights_)[i] /= z;
+      }
     }
   }
-  if (threadId == 0)
-    loss_ = state.getLoss();
+  if (threadId == 0) {
+    loss_ = model.getLoss();
+    for (int32_t i = 0; i < 2 * args_->ws; i++)
+      (*weights_)[i] = model.weights_probs[i];
+  }
   ifs.close();
 }
 
@@ -729,7 +773,48 @@ std::shared_ptr<Matrix> FastText::getInputMatrixFromFile(
       continue;
     }
     for (size_t j = 0; j < dim; j++) {
-      input->at(idx, j) = mat->at(i, j);
+      input_->at(idx, j) = mat->at(i, j);
+      output_->at(idx, j) = mat->at(i, j); // XXX
+    }
+  }
+}
+
+void FastText::loadOutputVectors(std::string filename) {
+  std::ifstream in(filename);
+  std::vector<std::string> words;
+  std::shared_ptr<Matrix> mat; // temp. matrix for pretrained vectors
+  int64_t n, dim;
+  if (!in.is_open()) {
+    throw std::invalid_argument(filename + " cannot be opened for loading!");
+  }
+  in >> n >> dim;
+  if (dim != args_->dim) {
+    throw std::invalid_argument(
+        "Dimension of pretrained vectors (" + std::to_string(dim) +
+        ") does not match dimension (" + std::to_string(args_->dim) + ")!");
+  }
+  mat = std::make_shared<Matrix>(n, dim);
+  for (size_t i = 0; i < n; i++) {
+    std::string word;
+    in >> word;
+    words.push_back(word);
+    dict_->add(word);
+    for (size_t j = 0; j < dim; j++) {
+      in >> mat->at(i, j);
+    }
+  }
+  in.close();
+
+  dict_->threshold(1, 0);
+  dict_->init();
+  output_ = std::make_shared<Matrix>(dict_->nwords()+args_->bucket, args_->dim);
+  output_->uniform(1.0 / args_->dim);
+
+  for (size_t i = 0; i < n; i++) {
+    int32_t idx = dict_->getId(words[i]);
+    if (idx < 0 || idx >= dict_->nwords()) continue;
+    for (size_t j = 0; j < dim; j++) {
+      output_->at(idx, j) = mat->at(i, j); // XXX
     }
   }
   return input;
@@ -760,6 +845,7 @@ std::shared_ptr<Matrix> FastText::createTrainOutputMatrix() const {
 void FastText::train(const Args& args) {
   args_ = std::make_shared<Args>(args);
   dict_ = std::make_shared<Dictionary>(args_);
+  weights_ = std::make_shared<Vector>(2 * args.ws);
   if (args_->input == "-") {
     // manage expectations
     throw std::invalid_argument("Cannot use stdin for training!");
@@ -772,16 +858,28 @@ void FastText::train(const Args& args) {
   dict_->readFromFile(ifs);
   ifs.close();
 
-  if (!args_->pretrainedVectors.empty()) {
-    input_ = getInputMatrixFromFile(args_->pretrainedVectors);
+  if (args_->model == model_name::sup) {
+    output_ = std::make_shared<Matrix>(dict_->nlabels(), args_->dim);
   } else {
-    input_ = createRandomMatrix();
+    output_ = std::make_shared<Matrix>(dict_->nwords(), args_->dim);
   }
-  output_ = createTrainOutputMatrix();
-  auto loss = createLoss(output_);
-  bool normalizeGradient = (args_->model == model_name::sup);
-  model_ = std::make_shared<Model>(input_, output_, loss, normalizeGradient);
+  output_->zero();
+  if (args_->pretrainedOutputVectors.size() != 0) {
+    loadOutputVectors(args_->pretrainedOutputVectors);
+  }
+  if (args_->pretrainedVectors.size() != 0) {
+    loadVectors(args_->pretrainedVectors);
+  } else {
+    input_ = std::make_shared<Matrix>(dict_->nwords()+args_->bucket, args_->dim);
+    input_->uniform(1.0 / args_->dim);
+  }
   startThreads();
+  model_ = std::make_shared<WeightsModel>(input_, output_, args_, 0);
+  if (args_->model == model_name::sup) {
+    model_->setTargetCounts(dict_->getCounts(entry_type::label));
+  } else {
+    model_->setTargetCounts(dict_->getCounts(entry_type::word));
+  }
 }
 
 void FastText::startThreads() {
@@ -795,15 +893,15 @@ void FastText::startThreads() {
   const int64_t ntokens = dict_->ntokens();
   // Same condition as trainThread
   while (tokenCount_ < args_->epoch * ntokens) {
-    std::this_thread::sleep_for(std::chrono::seconds(args_->printEvery));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     if (std::isnan(loss_)) {
       std::cerr << "Loss is NaN" << std::endl;
       exit(EXIT_FAILURE);
     }
     if (loss_ >= 0 && args_->verbose > 1) {
       real progress = real(tokenCount_) / (args_->epoch * ntokens);
-      printInfo(progress, loss_, std::cerr);
-      std::cerr << std::endl;
+      // std::cerr << "\r";
+      // printInfo(progress, loss_, std::cerr);
     }
   }
   for (int32_t i = 0; i < args_->thread; i++) {

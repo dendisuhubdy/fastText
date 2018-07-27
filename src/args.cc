@@ -252,21 +252,18 @@ void Args::printDictionaryHelp() {
 
 void Args::printTrainingHelp() {
   std::cerr
-      << "\nThe following arguments for training are optional:\n"
-      << "  -lr                 learning rate [" << lr << "]\n"
-      << "  -lrUpdateRate       change the rate of updates for the learning rate ["
-      << lrUpdateRate << "]\n"
-      << "  -dim                size of word vectors [" << dim << "]\n"
-      << "  -ws                 size of the context window [" << ws << "]\n"
-      << "  -epoch              number of epochs [" << epoch << "]\n"
-      << "  -neg                number of negatives sampled [" << neg << "]\n"
-      << "  -loss               loss function {ns, hs, softmax, one-vs-all} ["
-      << lossToString(loss) << "]\n"
-      << "  -thread             number of threads [" << thread << "]\n"
-      << "  -pretrainedVectors  pretrained word vectors for supervised learning ["
-      << pretrainedVectors << "]\n"
-      << "  -saveOutput         whether output params should be saved ["
-      << boolToString(saveOutput) << "]\n";
+    << "\nThe following arguments for training are optional:\n"
+    << "  -lr                 learning rate [" << lr << "]\n"
+    << "  -lrUpdateRate       change the rate of updates for the learning rate [" << lrUpdateRate << "]\n"
+    << "  -dim                size of word vectors [" << dim << "]\n"
+    << "  -ws                 size of the context window [" << ws << "]\n"
+    << "  -epoch              number of epochs [" << epoch << "]\n"
+    << "  -neg                number of negatives sampled [" << neg << "]\n"
+    << "  -loss               loss function {ns, hs, softmax} [" << lossToString(loss) << "]\n"
+    << "  -thread             number of threads [" << thread << "]\n"
+    << "  -pretrainedVectors  pretrained word vectors for supervised learning ["<< pretrainedVectors <<"]\n"
+    << "  -pretrainedOutputVectors  pretrained word vectors for supervised learning ["<< pretrainedVectors <<"]\n"
+    << "  -saveOutput         whether output params should be saved [" << boolToString(saveOutput) << "]\n";
 }
 
 void Args::printQuantizationHelp() {

@@ -38,10 +38,16 @@ class FastText {
   std::shared_ptr<Matrix> input_;
   std::shared_ptr<Matrix> output_;
 
-  std::shared_ptr<Model> model_;
+  std::shared_ptr<QMatrix> qinput_;
+  std::shared_ptr<QMatrix> qoutput_;
+
+  std::shared_ptr<WeightsModel> model_;
 
   std::atomic<int64_t> tokenCount_{};
   std::atomic<real> loss_{};
+
+  // XXX This is not atomic
+  std::shared_ptr<Vector> weights_;
 
   // XXX This is not atomic
   std::shared_ptr<Vector> weights_;
@@ -180,10 +186,25 @@ class FastText {
       "saveModel is being deprecated, please use the other signature.")
   void saveModel();
 
-  FASTTEXT_DEPRECATED("precomputeWordVectors is being deprecated.")
-  void precomputeWordVectors(DenseMatrix& wordVectors);
-
-  FASTTEXT_DEPRECATED("findNN is being deprecated and replaced by getNN.")
+  void supervised(
+      WeightsModel&,
+      real,
+      const std::vector<int32_t>&,
+      const std::vector<int32_t>&);
+  void cbow(WeightsModel&, real, const std::vector<int32_t>&);
+  void skipgram(WeightsModel&, real, const std::vector<int32_t>&);
+  std::vector<int32_t> selectEmbeddings(int32_t) const;
+  void getSentenceVector(std::istream&, Vector&);
+  void quantize(const Args);
+  std::tuple<int64_t, double, double> test(std::istream&, int32_t, real = 0.0);
+  void predict(std::istream&, int32_t, bool, real = 0.0);
+  void predict(
+      std::istream&,
+      int32_t,
+      std::vector<std::pair<real, std::string>>&,
+      real = 0.0) const;
+  void ngramVectors(std::string);
+  void precomputeWordVectors(Matrix&);
   void findNN(
       const DenseMatrix& wordVectors,
       const Vector& query,

@@ -112,9 +112,9 @@ void Dictionary::getSubwords(
     ngrams.push_back(i);
     substrings.push_back(words_[i].word);
   }
-  if (word != EOS) {
-    computeSubwords(BOW + word + EOW, ngrams, &substrings);
-  }
+  // if (word != EOS) {
+  //   computeSubwords(BOW + word + EOW, ngrams, substrings);
+  // }
 }
 
 bool Dictionary::discard(int32_t id, real rand) const {
