@@ -7,10 +7,12 @@
  */
 
 #include "args.h"
+#include "vector.h"
 
 #include <stdlib.h>
 
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 namespace fasttext {
@@ -18,7 +20,8 @@ namespace fasttext {
 Args::Args() {
   lr = 0.05;
   dim = 100;
-  ws = 5;
+  weightsL = {0.2, 0.4, 0.6, 0.8, 1.0};
+  weightsR = {1.0, 0.8, 0.6, 0.4, 0.2};
   epoch = 5;
   minCount = 5;
   minCountLabel = 0;
@@ -34,6 +37,7 @@ Args::Args() {
   t = 1e-4;
   label = "__label__";
   verbose = 2;
+  printEvery = 10;
   pretrainedVectors = "";
   pretrainedOutputVectors = "";
   saveOutput = false;
@@ -79,6 +83,14 @@ std::string Args::modelToString(model_name mn) const {
   return "Unknown model name!"; // should never happen
 }
 
+void Args::parseFloatVector(std::vector<float>& v, const std::string& s) {
+    std::istringstream f(s);
+    std::string float_;
+    v.clear();
+    while (getline(f, float_, ' '))
+        v.push_back(std::stof(float_));
+}
+
 void Args::parseArgs(const std::vector<std::string>& args) {
   std::string command(args[1]);
   if (command == "supervised") {
@@ -112,8 +124,10 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         lrUpdateRate = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-dim") {
         dim = std::stoi(args.at(ai + 1));
-      } else if (args[ai] == "-ws") {
-        ws = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-weightsLeft") {
+        parseFloatVector(weightsL, args.at(ai + 1));
+      } else if (args[ai] == "-weightsRight") {
+        parseFloatVector(weightsR, args.at(ai + 1));
       } else if (args[ai] == "-epoch") {
         epoch = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-minCount") {
@@ -153,6 +167,8 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         label = std::string(args.at(ai + 1));
       } else if (args[ai] == "-verbose") {
         verbose = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-printEvery") {
+        printEvery = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-pretrainedVectors") {
         pretrainedVectors = std::string(args.at(ai + 1));
       } else if (args[ai] == "-pretrainedOutputVectors") {
@@ -192,6 +208,14 @@ void Args::parseArgs(const std::vector<std::string>& args) {
   if (wordNgrams <= 1 && maxn == 0) {
     bucket = 0;
   }
+
+  std::cout << "Weights:";
+  for (int i = 0; i < weightsL.size(); ++i)
+    std::cout << " " << weightsL[i];
+  std::cout << " -";
+  for (int i = 0; i < weightsR.size(); ++i)
+    std::cout << " " << weightsR[i];
+  std::cout << std::endl;
 }
 
 void Args::printHelp() {
