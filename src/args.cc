@@ -256,7 +256,8 @@ void Args::printTrainingHelp() {
     << "  -lr                 learning rate [" << lr << "]\n"
     << "  -lrUpdateRate       change the rate of updates for the learning rate [" << lrUpdateRate << "]\n"
     << "  -dim                size of word vectors [" << dim << "]\n"
-    << "  -ws                 size of the context window [" << ws << "]\n"
+    << "  -weightsLeft        weights left of the central word (read left-to-right) [0.2 0.4 0.6 0.8 1.0]\n"
+    << "  -weightsRight       weights right of the central word (read left-to-right) [1.0 0.8 0.6 0.4 0.2]\n"
     << "  -epoch              number of epochs [" << epoch << "]\n"
     << "  -neg                number of negatives sampled [" << neg << "]\n"
     << "  -loss               loss function {ns, hs, softmax} [" << lossToString(loss) << "]\n"
@@ -281,64 +282,71 @@ void Args::printQuantizationHelp() {
 }
 
 void Args::save(std::ostream& out) {
-  out.write((char*)&(dim), sizeof(int));
-  out.write((char*)&(ws), sizeof(int));
-  out.write((char*)&(epoch), sizeof(int));
-  out.write((char*)&(minCount), sizeof(int));
-  out.write((char*)&(neg), sizeof(int));
-  out.write((char*)&(wordNgrams), sizeof(int));
-  out.write((char*)&(loss), sizeof(loss_name));
-  out.write((char*)&(model), sizeof(model_name));
-  out.write((char*)&(bucket), sizeof(int));
-  out.write((char*)&(minn), sizeof(int));
-  out.write((char*)&(maxn), sizeof(int));
-  out.write((char*)&(lrUpdateRate), sizeof(int));
-  out.write((char*)&(t), sizeof(double));
+  out.write((char*) &(dim), sizeof(int));
+  int len = weightsL.size();
+  out.write((char*) &(len), sizeof(int));
+  for (int i = 0; i < len; ++i)
+    out.write((char*) &(weightsL[i]), sizeof(float));
+  len = weightsR.size();
+  out.write((char*) &(len), sizeof(int));
+  for (int i = 0; i < len; ++i)
+    out.write((char*) &(weightsR[i]), sizeof(float));
+  out.write((char*) &(epoch), sizeof(int));
+  out.write((char*) &(minCount), sizeof(int));
+  out.write((char*) &(neg), sizeof(int));
+  out.write((char*) &(wordNgrams), sizeof(int));
+  out.write((char*) &(loss), sizeof(loss_name));
+  out.write((char*) &(model), sizeof(model_name));
+  out.write((char*) &(bucket), sizeof(int));
+  out.write((char*) &(minn), sizeof(int));
+  out.write((char*) &(maxn), sizeof(int));
+  out.write((char*) &(lrUpdateRate), sizeof(int));
+  out.write((char*) &(t), sizeof(double));
 }
 
 void Args::load(std::istream& in) {
-  in.read((char*)&(dim), sizeof(int));
-  in.read((char*)&(ws), sizeof(int));
-  in.read((char*)&(epoch), sizeof(int));
-  in.read((char*)&(minCount), sizeof(int));
-  in.read((char*)&(neg), sizeof(int));
-  in.read((char*)&(wordNgrams), sizeof(int));
-  in.read((char*)&(loss), sizeof(loss_name));
-  in.read((char*)&(model), sizeof(model_name));
-  in.read((char*)&(bucket), sizeof(int));
-  in.read((char*)&(minn), sizeof(int));
-  in.read((char*)&(maxn), sizeof(int));
-  in.read((char*)&(lrUpdateRate), sizeof(int));
-  in.read((char*)&(t), sizeof(double));
+  in.read((char*) &(dim), sizeof(int));
+  int len = 0;
+  in.read((char*) &(len), sizeof(int));
+  weightsL.resize(len);
+  for (int i = 0; i < len; ++i)
+    in.read((char*) &(weightsL[i]), sizeof(float));
+  in.read((char*) &(len), sizeof(int));
+  weightsR.resize(len);
+  for (int i = 0; i < len; ++i)
+    in.read((char*) &(weightsR[i]), sizeof(float));
+  in.read((char*) &(epoch), sizeof(int));
+  in.read((char*) &(minCount), sizeof(int));
+  in.read((char*) &(neg), sizeof(int));
+  in.read((char*) &(wordNgrams), sizeof(int));
+  in.read((char*) &(loss), sizeof(loss_name));
+  in.read((char*) &(model), sizeof(model_name));
+  in.read((char*) &(bucket), sizeof(int));
+  in.read((char*) &(minn), sizeof(int));
+  in.read((char*) &(maxn), sizeof(int));
+  in.read((char*) &(lrUpdateRate), sizeof(int));
+  in.read((char*) &(t), sizeof(double));
 }
 
 void Args::dump(std::ostream& out) const {
-  out << "dim"
-      << " " << dim << std::endl;
-  out << "ws"
-      << " " << ws << std::endl;
-  out << "epoch"
-      << " " << epoch << std::endl;
-  out << "minCount"
-      << " " << minCount << std::endl;
-  out << "neg"
-      << " " << neg << std::endl;
-  out << "wordNgrams"
-      << " " << wordNgrams << std::endl;
-  out << "loss"
-      << " " << lossToString(loss) << std::endl;
-  out << "model"
-      << " " << modelToString(model) << std::endl;
-  out << "bucket"
-      << " " << bucket << std::endl;
-  out << "minn"
-      << " " << minn << std::endl;
-  out << "maxn"
-      << " " << maxn << std::endl;
-  out << "lrUpdateRate"
-      << " " << lrUpdateRate << std::endl;
-  out << "t"
-      << " " << t << std::endl;
+  out << "dim" << " " << dim << std::endl;
+  out << "weightsLeft";
+  for (int i = 0; i < weightsL.size(); ++i)
+    out << " " << weightsL[i];
+  out << "weightsRight";
+  for (int i = 0; i < weightsR.size(); ++i)
+    out << " " << weightsR[i];
+  out << "epoch" << " " << epoch << std::endl;
+  out << "minCount" << " " << minCount << std::endl;
+  out << "neg" << " " << neg << std::endl;
+  out << "wordNgrams" << " " << wordNgrams << std::endl;
+  out << "loss" << " " << lossToString(loss) << std::endl;
+  out << "model" << " " << modelToString(model) << std::endl;
+  out << "bucket" << " " << bucket << std::endl;
+  out << "minn" << " " << minn << std::endl;
+  out << "maxn" << " " << maxn << std::endl;
+  out << "lrUpdateRate" << " " << lrUpdateRate << std::endl;
+  out << "t" << " " << t << std::endl;
 }
 
 } // namespace fasttext

@@ -19,6 +19,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <algorithm>
+#include <stdexcept>
+#include <numeric>
+
+#define WS 5 // XXX XXX XXX
 
 namespace fasttext {
 
@@ -108,11 +113,12 @@ void FastText::getSubwordVector(Vector& vec, const std::string& subword) const {
   addInputVector(vec, h);
 }
 
-void FastText::saveVectors(const std::string& filename) {
-  std::ofstream ofs(filename);
-  if (!ofs.is_open()) {
-    throw std::invalid_argument(
-        filename + " cannot be opened for saving vectors!");
+void FastText::getOutputWordVector(Vector& vec, const std::string& word) const {
+  vec.zero();
+  if (quant_) {
+    vec.addRow(*qoutput_, dict_->getId(word));
+  } else {
+    vec.addRow(*output_, dict_->getId(word));
   }
 }
 
@@ -267,7 +273,7 @@ void FastText::loadModel(std::istream& in) {
   }
   output_->load(in);
 
-  model_ = std::make_shared<WeightsModel>(input_, output_, args_, 0);
+  model_ = std::make_shared<Model>(input_, output_, args_, 0);
   model_->quant_ = quant_;
   model_->setQuantizePointer(qinput_, qoutput_, args_->qout);
 
@@ -297,9 +303,6 @@ void FastText::printInfo(real progress, real loss, std::ostream& log_stream) {
   log_stream << " words/sec/thread: " << std::setw(7) << int64_t(wst);
   log_stream << " lr: " << std::setw(9) << std::setprecision(6) << lr;
   log_stream << " loss: " << std::setw(9) << std::setprecision(6) << loss;
-  log_stream << " weights: ";
-  for (int32_t i = 0; i < 2 * args_->ws; ++i)
-    log_stream << std::setprecision(6) << (*weights_)[i] << " ";
   log_stream << " ETA: " << std::setw(3) << etah;
   log_stream << "h" << std::setw(2) << etam << "m";
   log_stream << std::flush;
@@ -365,7 +368,7 @@ void FastText::quantize(const Args& qargs) {
   }
 
   quant_ = true;
-  model_ = std::make_shared<WeightsModel>(input_, output_, args_, 0);
+  model_ = std::make_shared<Model>(input_, output_, args_, 0);
   model_->quant_ = quant_;
   model_->setQuantizePointer(qinput_, qoutput_, args_->qout);
   if (args_->model == model_name::sup) {
@@ -376,7 +379,7 @@ void FastText::quantize(const Args& qargs) {
 }
 
 void FastText::supervised(
-    WeightsModel& model,
+    Model& model,
     real lr,
     const std::vector<int32_t>& line,
     const std::vector<int32_t>& labels) {
@@ -385,10 +388,10 @@ void FastText::supervised(
   int32_t i = uniform(model.rng);
   exit(EXIT_FAILURE);
   // XXX Not implemented
-  model.update(line, labels[i], lr, 0);
+  model.update(line, labels[i], lr);
 }
 
-void FastText::cbow(WeightsModel& model, real lr,
+void FastText::cbow(Model& model, real lr,
                     const std::vector<int32_t>& line) {
   std::vector<int32_t> bow;
   std::uniform_int_distribution<> uniform(1, WS); // XXX XXX XXX
@@ -403,34 +406,32 @@ void FastText::cbow(WeightsModel& model, real lr,
     }
     exit(EXIT_FAILURE);
     // XXX Not implemented
-    model.update(bow, line[w], lr, 0);
+    model.update(bow, line[w], lr);
   }
 }
 
-void FastText::skipgram(WeightsModel& model, real lr,
+void FastText::skipgram(Model& model, real lr,
                         const std::vector<int32_t>& line) {
-  // for (int32_t w = 0; w < line.size(); w++) {
-  //   std::cerr << line[w] << " " << dict_->words_[w].word << " " << dict_->words_[w].count << std::endl;
-  // }
-  // std::cerr << std::endl;
-  // exit(0);
-  //
-  //
-  //
-  // std::uniform_int_distribution<> uniform(1, args_->ws);
+  std::uniform_real_distribution<> uniform(0.0, 1.0);
   for (int32_t w = 0; w < line.size(); w++) { // XXX
-  // for (int32_t w = uniform(model.rng); w < line.size(); w+=args_->ws) {
-    // Start from a random location at the beginning and move the window
-    // int32_t boundary = uniform(model.rng);
-    int32_t boundary = args_->ws;
     const std::vector<int32_t>& ngrams = dict_->getSubwords(line[w]);
-    for (int32_t c = -boundary; c <= boundary; c++) {
-      if (c != 0 && w + c >= 0 && w + c < line.size()) {
-	// Pass c as offset
-	//     c \in {-boundary, ..., -1, 1, ..., boundary}
-	// so add boundary and subtract 1 in the right half to make
-	//     offset \in {0, ..., 2*boundary-1}.
-        model.update(ngrams, line[w + c], lr, c + boundary + (c > 0 ? -1 : 0));
+
+    int32_t boundaryL = args_->weightsL.size();
+    for (int32_t c = -boundaryL; c < 0; c++) {
+      if (w + c >= 0 && w + c < line.size() && 
+          uniform(model.rng) < args_->weightsL[c + boundaryL]) {
+	    // Pass c as offset
+	    //     c \in {-boundary, ..., -1, 1, ..., boundary}
+	    // so add boundary and subtract 1 in the right half to make
+	    //     offset \in {0, ..., 2*boundary-1}.
+        model.update(ngrams, line[w + c], lr);
+      }
+    }
+    int32_t boundaryR = args_->weightsR.size();
+    for (int32_t c = 1; c <= boundaryR; c++) {
+      if (w + c >= 0 && w + c < line.size() &&
+          uniform(model.rng) < args_->weightsR[c - 1]) {
+        model.update(ngrams, line[w + c], lr);
       }
     }
   }
@@ -682,8 +683,7 @@ void FastText::trainThread(int32_t threadId) {
   std::ifstream ifs(args_->input);
   utils::seek(ifs, threadId * utils::size(ifs) / args_->thread);
 
-  // Model model(input_, output_, args_, threadId);
-  WeightsModel model(input_, output_, args_, threadId);
+  Model model(input_, output_, args_, threadId);
   if (args_->model == model_name::sup) {
     model.setTargetCounts(dict_->getCounts(entry_type::label));
   } else {
@@ -709,28 +709,12 @@ void FastText::trainThread(int32_t threadId) {
     if (localTokenCount > args_->lrUpdateRate) {
       tokenCount_ += localTokenCount;
       localTokenCount = 0;
-      if (threadId == 0 && args_->verbose > 1) {
+      if (threadId == 0 && args_->verbose > 1)
         loss_ = model.getLoss();
-
-        for (int32_t i = 0; i < 2 * args_->ws; i++)
-          (*weights_)[i] = model.weights_probs[i];
-        real max = (*weights_)[0], z = 0.0;
-        for (int32_t i = 0; i < 2 * args_->ws; i++)
-          max = std::max((*weights_)[i], max);
-        for (int32_t i = 0; i < 2 * args_->ws; i++) {
-          (*weights_)[i] = exp((*weights_)[i] - max);
-          z += (*weights_)[i];
-        }
-        for (int32_t i = 0; i < 2 * args_->ws; i++)
-          (*weights_)[i] /= z;
-      }
     }
   }
-  if (threadId == 0) {
+  if (threadId == 0)
     loss_ = model.getLoss();
-    for (int32_t i = 0; i < 2 * args_->ws; i++)
-      (*weights_)[i] = model.weights_probs[i];
-  }
   ifs.close();
 }
 
@@ -779,6 +763,7 @@ std::shared_ptr<Matrix> FastText::getInputMatrixFromFile(
   }
 }
 
+// XXX Check if it is correct
 void FastText::loadOutputVectors(std::string filename) {
   std::ifstream in(filename);
   std::vector<std::string> words;
@@ -845,7 +830,6 @@ std::shared_ptr<Matrix> FastText::createTrainOutputMatrix() const {
 void FastText::train(const Args& args) {
   args_ = std::make_shared<Args>(args);
   dict_ = std::make_shared<Dictionary>(args_);
-  weights_ = std::make_shared<Vector>(2 * args.ws);
   if (args_->input == "-") {
     // manage expectations
     throw std::invalid_argument("Cannot use stdin for training!");
@@ -874,7 +858,7 @@ void FastText::train(const Args& args) {
     input_->uniform(1.0 / args_->dim);
   }
   startThreads();
-  model_ = std::make_shared<WeightsModel>(input_, output_, args_, 0);
+  model_ = std::make_shared<Model>(input_, output_, args_, 0);
   if (args_->model == model_name::sup) {
     model_->setTargetCounts(dict_->getCounts(entry_type::label));
   } else {
@@ -893,24 +877,23 @@ void FastText::startThreads() {
   const int64_t ntokens = dict_->ntokens();
   // Same condition as trainThread
   while (tokenCount_ < args_->epoch * ntokens) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::seconds(args_->printEvery));
     if (std::isnan(loss_)) {
       std::cerr << "Loss is NaN" << std::endl;
       exit(EXIT_FAILURE);
     }
     if (loss_ >= 0 && args_->verbose > 1) {
       real progress = real(tokenCount_) / (args_->epoch * ntokens);
-      // std::cerr << "\r";
-      // printInfo(progress, loss_, std::cerr);
+      printInfo(progress, loss_, std::cerr);
+      std::cerr << std::endl;
     }
   }
   for (int32_t i = 0; i < args_->thread; i++) {
     threads[i].join();
   }
   if (args_->verbose > 0) {
-    std::cerr << "\r";
-    printInfo(1.0, loss_, std::cerr);
-    std::cerr << std::endl;
+      printInfo(1.0, loss_, std::cerr);
+      std::cerr << std::endl;
   }
 }
 

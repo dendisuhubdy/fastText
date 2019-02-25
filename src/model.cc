@@ -26,8 +26,94 @@ Model::State::State(int32_t hiddenSize, int32_t outputSize, int32_t seed)
       grad(hiddenSize),
       rng(seed) {}
 
-real Model::State::getLoss() const {
-  return lossValue_ / nexamples_;
+#define WS 5  // XXX XXX XXX
+
+Model::Model(
+    std::shared_ptr<Matrix> wi,
+    std::shared_ptr<Matrix> wo,
+    std::shared_ptr<Args> args,
+    int32_t seed)
+    : hidden_(args->dim),
+      output_(wo->size(0)),
+      grad_(args->dim),
+      rng(seed),
+      quant_(false) {
+  wi_ = wi;
+  wo_ = wo;
+  args_ = args;
+  osz_ = wo->size(0);
+  hsz_ = args->dim;
+  negpos = 0;
+  loss_ = 0.0;
+  nexamples_ = 1;
+  t_sigmoid_.reserve(SIGMOID_TABLE_SIZE + 1);
+  t_log_.reserve(LOG_TABLE_SIZE + 1);
+  initSigmoid();
+  initLog();
+}
+
+void Model::setQuantizePointer(std::shared_ptr<QMatrix> qwi,
+                               std::shared_ptr<QMatrix> qwo, bool qout) {
+  qwi_ = qwi;
+  qwo_ = qwo;
+  if (qout) {
+    osz_ = qwo_->getM();
+  }
+}
+
+real Model::binaryLogistic(int32_t target, bool label, real lr) {
+  real score = sigmoid(wo_->dotRow(hidden_, target));
+  real alpha = lr * (real(label) - score);
+  grad_.addRow(*wo_, target, alpha);
+  wo_->addRow(hidden_, target, alpha);
+  if (label) {
+    return -log(score);
+  } else {
+    return -log(1.0 - score);
+  }
+}
+
+real Model::negativeSampling(int32_t target, real lr) {
+  real loss = 0.0;
+  grad_.zero();
+  for (int32_t n = 0; n <= args_->neg; n++) {
+    if (n == 0) {
+      loss += binaryLogistic(target, true, lr);
+    } else {
+      loss += binaryLogistic(getNegative(target), false, lr);
+    }
+  }
+  return loss;
+}
+
+real Model::hierarchicalSoftmax(int32_t target, real lr) {
+  real loss = 0.0;
+  grad_.zero();
+  const std::vector<bool>& binaryCode = codes[target];
+  const std::vector<int32_t>& pathToRoot = paths[target];
+  for (int32_t i = 0; i < pathToRoot.size(); i++) {
+    loss += binaryLogistic(pathToRoot[i], binaryCode[i], lr);
+  }
+  return loss;
+}
+
+void Model::computeOutputSoftmax(Vector& hidden, Vector& output) const {
+  if (quant_ && args_->qout) {
+    output.mul(*qwo_, hidden);
+  } else {
+    output.mul(*wo_, hidden);
+  }
+  real max = output[0], z = 0.0;
+  for (int32_t i = 0; i < osz_; i++) {
+    max = std::max(output[i], max);
+  }
+  for (int32_t i = 0; i < osz_; i++) {
+    output[i] = exp(output[i] - max);
+    z += output[i];
+  }
+  for (int32_t i = 0; i < osz_; i++) {
+    output[i] /= z;
+  }
 }
 
 void Model::State::incrementNExamples(real loss) {
@@ -106,87 +192,6 @@ real Model::sigmoid(real x) const {
     int64_t i = int64_t((x + MAX_SIGMOID) * SIGMOID_TABLE_SIZE / MAX_SIGMOID / 2);
     return t_sigmoid_[i];
   }
-}
-
-
-WeightsModel::WeightsModel(
-    std::shared_ptr<Matrix> wi,
-    std::shared_ptr<Matrix> wo,
-    std::shared_ptr<Args> args,
-    int32_t seed)
-    : Model(wi, wo, args, seed),
-      weights(2 * args->ws),
-      weights_probs(2 * args->ws),
-      weights_grad_(2 * args->ws),
-      wsz_(2 * args->ws) {
-  weights.ones();
-}
-
-void WeightsModel::exitWithError() {
-  std::cerr << "This mode is not supported" << std::endl;
-  exit(EXIT_FAILURE);
-}
-
-void WeightsModel::update(const std::vector<int32_t>& input,
-                          int32_t target, real lr,
-                          int32_t winOffset) {
-  assert(target >= 0);
-  assert(target < osz_);
-  if (input.size() == 0) return;
-  computeHidden(input, hidden_);
-  if (args_->loss == loss_name::ns) {
-    exitWithError();
-    loss_ += negativeSampling(target, lr);
-  } else if (args_->loss == loss_name::hs) {
-    exitWithError();
-    loss_ += hierarchicalSoftmax(target, lr);
-  } else {
-    real sampleLoss = softmax(target, lr, winOffset);
-    loss_ += sampleLoss;
-    weights.addVector(weights_grad_, -lr * sampleLoss);
-  }
-  nexamples_ += 1;
-
-  // if (args_->model == model_name::sup) {
-  //   grad_.mul(1.0 / input.size());
-  // }
-  // for (auto it = input.cbegin(); it != input.cend(); ++it) {
-  //   wi_->addRow(grad_, *it, 1.0);
-  // }
-}
-
-real WeightsModel::softmax(int32_t target, real lr, int32_t offset) {
-  weights_grad_.zero();
-  weights_probs.zero();
-  // Apply weights
-  real max = weights[0], z = 0.0;
-  for (int32_t i = 0; i < wsz_; i++)
-    max = std::max(weights[i], max);
-  for (int32_t i = 0; i < wsz_; i++) {
-    weights_probs[i] = exp(weights[i] - max);
-    z += weights_probs[i];
-  }
-  for (int32_t i = 0; i < wsz_; i++) {
-    weights_probs[i] /= z;
-    // weights_probs[i] = std::max(weights_probs[i], (real)0.001);
-    std::cerr << std::setprecision(2) << std::setw(5);
-    std::cerr << weights_probs[i] << " ";
-  }
-  // Now weights_grad_ holds softmax()
-  for (int32_t i = 0; i < wsz_; i++)
-    weights_grad_[i] = ((i == offset) ? (1.0/z - weights_probs[offset]) : weights_probs[i]);
-  // Now weights_grad_ hold the diff wrt weights. Before update it needs to be
-  // multiplied by log(loss)
-
-  computeOutputSoftmax();
-  for (int32_t i = 0; i < osz_; i++) {
-    real label = (i == target) ? 1.0 : 0.0;
-    real alpha = lr * (label - output_[i]);
-    grad_.addRow(*wo_, i, alpha);
-    wo_->addRow(hidden_, i, alpha * weights_probs[offset]);
-  }
-  std::cerr << std::setprecision(5) << std::setw(7) << "\t" << -log(output_[target]) * weights_probs[offset] << std::endl;
-  return -log(output_[target]) * weights_probs[offset];
 }
 
 }

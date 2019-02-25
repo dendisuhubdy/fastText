@@ -19,35 +19,39 @@ enum class model_name : int { cbow = 1, sg, sup };
 enum class loss_name : int { hs = 1, ns, softmax, ova };
 
 class Args {
- protected:
-  std::string lossToString(loss_name) const;
-  std::string boolToString(bool) const;
-  std::string modelToString(model_name) const;
+  protected:
+    std::string lossToString(loss_name) const;
+    std::string boolToString(bool) const;
+    std::string modelToString(model_name) const;
+	void parseFloatVector(std::vector<float>& v, const std::string& s);
 
- public:
-  Args();
-  std::string input;
-  std::string output;
-  double lr;
-  int lrUpdateRate;
-  int dim;
-  int ws;
-  int epoch;
-  int minCount;
-  int minCountLabel;
-  int neg;
-  int wordNgrams;
-  loss_name loss;
-  model_name model;
-  int bucket;
-  int minn;
-  int maxn;
-  int thread;
-  double t;
-  std::string label;
-  int verbose;
-  std::string pretrainedVectors;
-  bool saveOutput;
+  public:
+    Args();
+    std::string input;
+    std::string output;
+    double lr;
+    int lrUpdateRate;
+    int dim;
+	std::vector<float> weightsL;
+	std::vector<float> weightsR;
+    int epoch;
+    int minCount;
+    int minCountLabel;
+    int neg;
+    int wordNgrams;
+    loss_name loss;
+    model_name model;
+    int bucket;
+    int minn;
+    int maxn;
+    int thread;
+    double t;
+    std::string label;
+    int verbose;
+    int printEvery;
+    std::string pretrainedVectors;
+    std::string pretrainedOutputVectors; // XXX Unsupported yet?
+    bool saveOutput;
 
   bool qout;
   bool retrain;
