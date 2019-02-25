@@ -412,28 +412,11 @@ void FastText::cbow(Model& model, real lr,
 
 void FastText::skipgram(Model& model, real lr,
                         const std::vector<int32_t>& line) {
-  std::uniform_real_distribution<> uniform(0.0, 1.0);
-  for (int32_t w = 0; w < line.size(); w++) { // XXX
-    const std::vector<int32_t>& ngrams = dict_->getSubwords(line[w]);
+  int32_t w = 0;  // Assume the first "word" is a customer_id  
+  const std::vector<int32_t>& ngrams = dict_->getSubwords(line[w]);
 
-    int32_t boundaryL = args_->weightsL.size();
-    for (int32_t c = -boundaryL; c < 0; c++) {
-      if (w + c >= 0 && w + c < line.size() && 
-          uniform(model.rng) < args_->weightsL[c + boundaryL]) {
-	    // Pass c as offset
-	    //     c \in {-boundary, ..., -1, 1, ..., boundary}
-	    // so add boundary and subtract 1 in the right half to make
-	    //     offset \in {0, ..., 2*boundary-1}.
-        model.update(ngrams, line[w + c], lr);
-      }
-    }
-    int32_t boundaryR = args_->weightsR.size();
-    for (int32_t c = 1; c <= boundaryR; c++) {
-      if (w + c >= 0 && w + c < line.size() &&
-          uniform(model.rng) < args_->weightsR[c - 1]) {
-        model.update(ngrams, line[w + c], lr);
-      }
-    }
+  for (int32_t c = 1; c < line.size(); c++) {
+      model.update(ngrams, line[c], lr);
   }
 }
 
