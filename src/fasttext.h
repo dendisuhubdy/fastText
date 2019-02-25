@@ -41,7 +41,7 @@ class FastText {
   std::shared_ptr<QMatrix> qinput_;
   std::shared_ptr<QMatrix> qoutput_;
 
-  std::shared_ptr<WeightsModel> model_;
+  std::shared_ptr<Model> model_;
 
   std::atomic<int64_t> tokenCount_;
   std::atomic<real> loss_;
@@ -68,6 +68,7 @@ class FastText {
   void getVector(Vector&, const std::string&) const;
   void getWordVector(Vector&, const std::string&) const;
   void getSubwordVector(Vector&, const std::string&) const;
+  void getOutputWordVector(Vector& vec, const std::string& word) const;
   void addInputVector(Vector&, int32_t) const;
   inline void getInputVector(Vector& vec, int32_t ind) {
     vec.zero();
@@ -87,12 +88,12 @@ class FastText {
   void printInfo(real, real, std::ostream&);
 
   void supervised(
-      WeightsModel&,
+      Model&,
       real,
       const std::vector<int32_t>&,
       const std::vector<int32_t>&);
-  void cbow(WeightsModel&, real, const std::vector<int32_t>&);
-  void skipgram(WeightsModel&, real, const std::vector<int32_t>&);
+  void cbow(Model&, real, const std::vector<int32_t>&);
+  void skipgram(Model&, real, const std::vector<int32_t>&);
   std::vector<int32_t> selectEmbeddings(int32_t) const;
   void getSentenceVector(std::istream&, Vector&);
   void quantize(const Args);
@@ -116,6 +117,7 @@ class FastText {
   void train(const Args);
 
   void loadVectors(std::string);
+  void loadOutputVectors(std::string);
   int getDimension() const;
   bool isQuant() const;
 };

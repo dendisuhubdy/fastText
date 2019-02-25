@@ -8,10 +8,12 @@
  */
 
 #include "args.h"
+#include "vector.h"
 
 #include <stdlib.h>
 
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 namespace fasttext {
@@ -19,7 +21,8 @@ namespace fasttext {
 Args::Args() {
   lr = 0.05;
   dim = 100;
-  ws = 5;
+  weightsL = {0.2, 0.4, 0.6, 0.8, 1.0};
+  weightsR = {1.0, 0.8, 0.6, 0.4, 0.2};
   epoch = 5;
   minCount = 5;
   minCountLabel = 0;
@@ -35,6 +38,7 @@ Args::Args() {
   t = 1e-4;
   label = "__label__";
   verbose = 2;
+  printEvery = 10;
   pretrainedVectors = "";
   pretrainedOutputVectors = "";
   saveOutput = false;
@@ -78,6 +82,14 @@ std::string Args::modelToString(model_name mn) const {
   return "Unknown model name!"; // should never happen
 }
 
+void Args::parseFloatVector(std::vector<float>& v, const std::string& s) {
+    std::istringstream f(s);
+    std::string float_;
+    v.clear();
+    while (getline(f, float_, ' '))
+        v.push_back(std::stof(float_));
+}
+
 void Args::parseArgs(const std::vector<std::string>& args) {
   std::string command(args[1]);
   if (command == "supervised") {
@@ -111,8 +123,10 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         lrUpdateRate = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-dim") {
         dim = std::stoi(args.at(ai + 1));
-      } else if (args[ai] == "-ws") {
-        ws = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-weightsLeft") {
+        parseFloatVector(weightsL, args.at(ai + 1));
+      } else if (args[ai] == "-weightsRight") {
+        parseFloatVector(weightsR, args.at(ai + 1));
       } else if (args[ai] == "-epoch") {
         epoch = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-minCount") {
@@ -149,6 +163,8 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         label = std::string(args.at(ai + 1));
       } else if (args[ai] == "-verbose") {
         verbose = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-printEvery") {
+        printEvery = std::stoi(args.at(ai + 1));
       } else if (args[ai] == "-pretrainedVectors") {
         pretrainedVectors = std::string(args.at(ai + 1));
       } else if (args[ai] == "-pretrainedOutputVectors") {
@@ -188,6 +204,14 @@ void Args::parseArgs(const std::vector<std::string>& args) {
   if (wordNgrams <= 1 && maxn == 0) {
     bucket = 0;
   }
+
+  std::cout << "Weights:";
+  for (int i = 0; i < weightsL.size(); ++i)
+    std::cout << " " << weightsL[i];
+  std::cout << " -";
+  for (int i = 0; i < weightsR.size(); ++i)
+    std::cout << " " << weightsR[i];
+  std::cout << std::endl;
 }
 
 void Args::printHelp() {
@@ -196,7 +220,6 @@ void Args::printHelp() {
   printTrainingHelp();
   printQuantizationHelp();
 }
-
 
 void Args::printBasicHelp() {
   std::cerr
@@ -226,7 +249,8 @@ void Args::printTrainingHelp() {
     << "  -lr                 learning rate [" << lr << "]\n"
     << "  -lrUpdateRate       change the rate of updates for the learning rate [" << lrUpdateRate << "]\n"
     << "  -dim                size of word vectors [" << dim << "]\n"
-    << "  -ws                 size of the context window [" << ws << "]\n"
+    << "  -weightsLeft        weights left of the central word (read left-to-right) [0.2 0.4 0.6 0.8 1.0]\n"
+    << "  -weightsRight       weights right of the central word (read left-to-right) [1.0 0.8 0.6 0.4 0.2]\n"
     << "  -epoch              number of epochs [" << epoch << "]\n"
     << "  -neg                number of negatives sampled [" << neg << "]\n"
     << "  -loss               loss function {ns, hs, softmax} [" << lossToString(loss) << "]\n"
@@ -248,7 +272,14 @@ void Args::printQuantizationHelp() {
 
 void Args::save(std::ostream& out) {
   out.write((char*) &(dim), sizeof(int));
-  out.write((char*) &(ws), sizeof(int));
+  int len = weightsL.size();
+  out.write((char*) &(len), sizeof(int));
+  for (int i = 0; i < len; ++i)
+    out.write((char*) &(weightsL[i]), sizeof(float));
+  len = weightsR.size();
+  out.write((char*) &(len), sizeof(int));
+  for (int i = 0; i < len; ++i)
+    out.write((char*) &(weightsR[i]), sizeof(float));
   out.write((char*) &(epoch), sizeof(int));
   out.write((char*) &(minCount), sizeof(int));
   out.write((char*) &(neg), sizeof(int));
@@ -264,7 +295,15 @@ void Args::save(std::ostream& out) {
 
 void Args::load(std::istream& in) {
   in.read((char*) &(dim), sizeof(int));
-  in.read((char*) &(ws), sizeof(int));
+  int len = 0;
+  in.read((char*) &(len), sizeof(int));
+  weightsL.resize(len);
+  for (int i = 0; i < len; ++i)
+    in.read((char*) &(weightsL[i]), sizeof(float));
+  in.read((char*) &(len), sizeof(int));
+  weightsR.resize(len);
+  for (int i = 0; i < len; ++i)
+    in.read((char*) &(weightsR[i]), sizeof(float));
   in.read((char*) &(epoch), sizeof(int));
   in.read((char*) &(minCount), sizeof(int));
   in.read((char*) &(neg), sizeof(int));
@@ -280,7 +319,12 @@ void Args::load(std::istream& in) {
 
 void Args::dump(std::ostream& out) const {
   out << "dim" << " " << dim << std::endl;
-  out << "ws" << " " << ws << std::endl;
+  out << "weightsLeft";
+  for (int i = 0; i < weightsL.size(); ++i)
+    out << " " << weightsL[i];
+  out << "weightsRight";
+  for (int i = 0; i < weightsR.size(); ++i)
+    out << " " << weightsR[i];
   out << "epoch" << " " << epoch << std::endl;
   out << "minCount" << " " << minCount << std::endl;
   out << "neg" << " " << neg << std::endl;

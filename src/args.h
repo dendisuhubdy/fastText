@@ -24,6 +24,7 @@ class Args {
     std::string lossToString(loss_name) const;
     std::string boolToString(bool) const;
     std::string modelToString(model_name) const;
+	void parseFloatVector(std::vector<float>& v, const std::string& s);
 
   public:
     Args();
@@ -32,7 +33,8 @@ class Args {
     double lr;
     int lrUpdateRate;
     int dim;
-    int ws;
+	std::vector<float> weightsL;
+	std::vector<float> weightsR;
     int epoch;
     int minCount;
     int minCountLabel;
@@ -47,7 +49,9 @@ class Args {
     double t;
     std::string label;
     int verbose;
+    int printEvery;
     std::string pretrainedVectors;
+    std::string pretrainedOutputVectors; // XXX Unsupported yet?
     bool saveOutput;
 
     bool qout;
