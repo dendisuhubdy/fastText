@@ -5,11 +5,11 @@ EXPNAME=`date "+%Y-%m-%d_%H-%M-%S_%N"`
 mkdir -p exp/$EXPNAME
 echo "Starting $EXPNAME"...
 
-fasttext skipgram \
+./build/fasttext skipgram \
     -input /home/ubuntu/data/customer_interest_matrix.txt \
     -output exp/$EXPNAME/model \
     -lr 0.05 \
-    -dim 300 \
+    -dim 100 \
     -minCount 1 \
     -loss ns \
     -thread 8 \

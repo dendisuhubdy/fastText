@@ -101,6 +101,7 @@ void FastText::saveVectors() {
     if (!ofs.is_open()) {
       throw std::invalid_argument(outFiles[vecType] + " cannot be opened for saving!");
     }
+    std::cerr << "Saving " << vecType << " vector file" << std::endl;
     ofs << dict_->nwords() << " " << args_->dim << std::endl;
     Vector vec(args_->dim);
     for (int32_t i = 0; i < dict_->nwords(); i++) {

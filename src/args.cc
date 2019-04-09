@@ -38,11 +38,10 @@ Args::Args() {
   t = 1e-4;
   label = "__label__";
   verbose = 2;
-  printEvery = 10;
+  printEvery = 1;
   pretrainedVectors = "";
   pretrainedOutputVectors = "";
-  saveOutput = false;
-
+  saveOutput = true;
   qout = false;
   retrain = false;
   qnorm = false;
